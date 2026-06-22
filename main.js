@@ -56,6 +56,7 @@ let musicTimer = null;
 let lastPowerSpawn = 0;
 let heroMode = false;
 let heroModeEnd = 0;
+let lastNudge = 0;
 
 // Images (preloaded)
 const bgImages = {};
@@ -68,6 +69,7 @@ function loadAssets() {
   bgImages[0] = new Image(); bgImages[0].src = '/assets/level1-bg.jpg';
   bgImages[1] = new Image(); bgImages[1].src = '/assets/level2-bg.jpg';
   bgImages[2] = new Image(); bgImages[2].src = '/assets/level3-bg.jpg';
+  bgImages[3] = bgImages[0]; // hideout reuses adventure cozy variant + special overlay
   ballImg.src = '/assets/ball-sprite.png';
   powerImg.src = '/assets/powerups.png';
   titleImg.src = '/assets/title-banner.png';
@@ -248,7 +250,7 @@ const TABLES = [
   {
     id: 3,
     name: "JOSHWAY'S HIDEOUT",
-    bg: 0, // reuse adventure for cozy feel, or could enhance draw
+    bg: 3, // cozy overlay variant
     difficulty: 2.7,
     walls: [
       { x1: 50, y1: 38, x2: 550, y2: 38 },
@@ -994,6 +996,14 @@ function draw() {
     ctx.fillStyle = '#1f2937';
     ctx.fillRect(22, 42, 556, 728);
   }
+  // Special cozy living room overlay for Hideout (level 3 / id3)
+  if (currentLevel === 3) {
+    ctx.fillStyle = 'rgba(120, 80, 50, 0.18)';
+    ctx.fillRect(45, 140, 510, 80); // rug area
+    ctx.fillStyle = 'rgba(200, 180, 140, 0.12)';
+    ctx.fillRect(80, 300, 130, 60);
+    ctx.fillRect(390, 280, 120, 55);
+  }
 
   // Table border & frame (heroic)
   ctx.strokeStyle = '#facc15';
@@ -1060,7 +1070,7 @@ function draw() {
     ctx.fillStyle = '#facc15';
   });
 
-  // Rings - star coins, animated
+  // Rings - Joshway hero star coins, animated
   const ringPulse = Math.sin(Date.now() / 180) * 1.5 + 10.5;
   t.rings.forEach(r => {
     if (!r.collected) {
@@ -1071,6 +1081,9 @@ function draw() {
       ctx.fillStyle = '#854d0e';
       ctx.font = 'bold 15px monospace';
       ctx.fillText('★', r.x - 5.5, r.y + 5.5);
+      // cape stripe accent
+      ctx.fillStyle = '#f97316';
+      ctx.fillRect(r.x - 2, r.y - 1, 4, 1.5);
       // outer ring
       ctx.strokeStyle = '#f97316';
       ctx.lineWidth = 1.5;
@@ -1080,15 +1093,20 @@ function draw() {
     }
   });
 
-  // Power orbs
+  // Power orbs - Joshway themed
   powerOrbs.forEach(o => {
-    ctx.fillStyle = (o.type === 'multiball') ? '#67e8f9' : '#facc15';
+    const isSpecial = ['extraball','capeboost','shield'].includes(o.type);
+    ctx.fillStyle = (o.type === 'multiball') ? '#67e8f9' : (o.type === 'shield' ? '#a5b4fc' : (isSpecial ? '#f97316' : '#facc15'));
     ctx.beginPath();
     ctx.arc(o.x, o.y, o.r + Math.sin(Date.now()/110)*1.5, 0, Math.PI*2);
     ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(o.x, o.y, o.r + 2 + Math.sin(Date.now()/90), 0, Math.PI*2); ctx.stroke();
     ctx.fillStyle = '#111';
-    ctx.font = '10px monospace';
-    ctx.fillText(o.type[0].toUpperCase(), o.x - 3.5, o.y + 3.5);
+    ctx.font = 'bold 9px monospace';
+    const label = (o.type === 'capeboost') ? 'C' : (o.type === 'shield') ? 'S' : (o.type === 'extraball') ? '+' : o.type[0].toUpperCase();
+    ctx.fillText(label, o.x - 3, o.y + 3);
   });
 
   // Flippers - improved look with hero colors
@@ -1149,15 +1167,18 @@ function draw() {
   ctx.fillStyle = '#facc15';
   ctx.fillRect(537, plungerY + 4 - plungerPower * 1.7, 18, 6);
 
-  // Particles + floating scores
+  // Particles + floating scores (richer)
   particles.forEach(p => {
-    ctx.globalAlpha = Math.max(0.15, p.life / 28);
+    ctx.globalAlpha = Math.max(0.12, p.life / 28);
     ctx.fillStyle = p.color;
     const s = p.size || 2.5;
     if (p.type === 'star') {
-      ctx.fillText('★', p.x - 3, p.y + 3);
+      ctx.font = 'bold 11px monospace';
+      ctx.fillText('★', p.x - 4, p.y + 4);
+      ctx.fillText('★', p.x - 3 + Math.sin(p.life) * 1.5, p.y + 2);
     } else {
       ctx.fillRect(p.x, p.y, s, s);
+      if (p.life % 3 === 0) ctx.fillRect(p.x + 1, p.y + 1, 1, 1);
     }
   });
   ctx.globalAlpha = 1;
@@ -1331,7 +1352,8 @@ function endGame() {
 
   finalScoreEl.textContent = String(Math.floor(score)).padStart(6, '0');
   endTitleEl.textContent = levelCleared ? 'VICTORY! HERO!' : 'GAME OVER';
-  hsLevelEl.textContent = (currentLevel + 1);
+  const tName = currentTable.name || ('LEVEL ' + (currentLevel + 1));
+  hsLevelEl.textContent = (currentLevel + 1) + ' - ' + tName.split(' ')[0]; // short nice
 
   // Save + show high scores
   saveHighScore(currentLevel, Math.floor(score));
@@ -1377,7 +1399,14 @@ function saveHighScore(level, finalScore) {
 function displayHighScoresForLevel(level, targetEl) {
   const hs = JSON.parse(localStorage.getItem('joshwayHighScores') || '[[],[],[],[]]');
   const list = (hs[level] || []);
+  const tableName = (TABLES[level] && TABLES[level].name) ? TABLES[level].name : ('LEVEL ' + (level+1));
   targetEl.innerHTML = '';
+  const header = document.createElement('div');
+  header.style.color = '#facc15';
+  header.style.fontSize = '10px';
+  header.style.marginBottom = '3px';
+  header.textContent = tableName;
+  targetEl.appendChild(header);
   if (list.length === 0) {
     const li = document.createElement('li');
     li.textContent = 'No scores yet — be the first hero!';
@@ -1421,6 +1450,18 @@ function setupInput() {
       if (e.code === 'KeyM') {
         isMuted = !isMuted;
         if (isMuted) stopMusic(); else startPinballMusic(currentLevel);
+      }
+      // Tilt / Nudge mechanic (limited)
+      const nowN = Date.now();
+      if ((e.code === 'ArrowLeft' || e.code === 'ArrowRight' || e.code === 'ArrowUp') && nowN - lastNudge > 850) {
+        lastNudge = nowN;
+        const dir = e.code === 'ArrowLeft' ? -1 : (e.code === 'ArrowRight' ? 1 : 0);
+        activeBalls.forEach(b => {
+          b.vx += dir * 3.5 + (Math.random()-0.5);
+          if (e.code === 'ArrowUp') b.vy -= 4.2;
+        });
+        playSFX(280, 0.06, 'sawtooth', 0.18);
+        createParticles(300, 720, 8, '#f97316');
       }
     }
   });

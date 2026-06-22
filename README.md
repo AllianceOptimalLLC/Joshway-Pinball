@@ -32,6 +32,8 @@ npm run dev
 Standalone Vercel deployment under AllianceOptimalLLC.  
 Ready for joshway.app/pinball slug via domain config.
 
+**Latest Production Deploy:** https://joshway-pinball.vercel.app (via `vercel --prod --yes --scope allianceoptimal`)
+
 ---
 
 Built as part of the Joshway web games collection. All production quality, full polish.
