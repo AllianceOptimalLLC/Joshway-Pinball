@@ -230,6 +230,65 @@ const TABLES = [
     launchX: 536,
     launchY: 625,
     ringBonusMult: 165,
+  },
+  // LEVEL 4: JOSHWAY'S HIDEOUT - Unique cozy living room Joshway theme, furniture obstacles, loops
+  {
+    id: 3,
+    name: "JOSHWAY'S HIDEOUT",
+    bg: 0, // reuse adventure for cozy feel, or could enhance draw
+    difficulty: 2.7,
+    walls: [
+      { x1: 50, y1: 38, x2: 550, y2: 38 },
+      { x1: 550, y1: 38, x2: 582, y2: 72 },
+      { x1: 582, y1: 72, x2: 582, y2: 752 },
+      { x1: 582, y1: 752, x2: 510, y2: 785 },
+      { x1: 50, y1: 38, x2: 18, y2: 72 },
+      { x1: 18, y1: 72, x2: 18, y2: 752 },
+      { x1: 18, y1: 752, x2: 90, y2: 785 },
+      { x1: 500, y1: 600, x2: 500, y2: 785 },
+      // cozy furniture walls: sofa divider, tv stand, shelf
+      { x1: 120, y1: 160, x2: 195, y2: 175 },
+      { x1: 380, y1: 150, x2: 465, y2: 168 },
+      { x1: 250, y1: 480, x2: 355, y2: 495 },
+    ],
+    bumpers: [
+      { x: 125, y: 210, r: 26, pts: 520 }, // sofa cushion
+      { x: 295, y: 125, r: 23, pts: 580 }, // lamp
+      { x: 465, y: 205, r: 25, pts: 510 },
+      { x: 165, y: 345, r: 20, pts: 280 },
+      { x: 385, y: 355, r: 20, pts: 290 },
+      { x: 280, y: 460, r: 19, pts: 240 },
+      { x: 430, y: 490, r: 22, pts: 310 },
+      { x: 110, y: 560, r: 16, pts: 210 },
+    ],
+    slings: [
+      { x: 75, y: 635, w: 98, h: 16 },
+      { x: 432, y: 635, w: 98, h: 16 },
+    ],
+    ramps: [
+      { x1: 85, y1: 505, x2: 155, y2: 205, boost: 1.38 }, // left bookshelf ramp
+      { x1: 420, y1: 500, x2: 495, y2: 195, boost: 1.32 },
+      { x1: 220, y1: 555, x2: 375, y2: 145, boost: 1.15 }, // living room loop ramp
+    ],
+    rings: [
+      { x: 145, y: 240, collected: false },
+      { x: 310, y: 175, collected: false },
+      { x: 470, y: 225, collected: false },
+      { x: 115, y: 400, collected: false },
+      { x: 290, y: 395, collected: false },
+      { x: 460, y: 425, collected: false },
+      { x: 205, y: 530, collected: false },
+      { x: 355, y: 515, collected: false },
+    ],
+    outlanes: [
+      { x1: 22, y1: 650, x2: 75, y2: 775 },
+      { x1: 525, y1: 650, x2: 572, y2: 775 },
+      { x1: 500, y1: 565, x2: 500, y2: 600 },
+    ],
+    plungerX: 538,
+    launchX: 538,
+    launchY: 630,
+    ringBonusMult: 175,
   }
 ];
 
@@ -407,7 +466,13 @@ function updateHUD() {
     el.style.fontSize = '15px';
     el.style.verticalAlign = 'middle';
     el.title = p.type.toUpperCase();
-    el.textContent = (p.type === 'multiball') ? '⚡' : '✨';
+    let icon = '✨';
+    if (p.type === 'multiball') icon = '⚡';
+    else if (p.type === 'multiplier') icon = '✨';
+    else if (p.type === 'extraball') icon = '🟢';
+    else if (p.type === 'capeboost') icon = '🦸';
+    else if (p.type === 'shield') icon = '🛡️';
+    el.textContent = icon;
     powerupBar.appendChild(el);
   });
   if (activeBalls.length > 1) {
@@ -455,13 +520,20 @@ function updateParticles() {
 }
 
 function spawnPowerOrb(x, y) {
+  const rand = Math.random();
+  let type = 'multiball';
+  if (rand < 0.35) type = 'multiball';
+  else if (rand < 0.65) type = 'multiplier';
+  else if (rand < 0.82) type = 'extraball';
+  else if (rand < 0.93) type = 'capeboost';
+  else type = 'shield';
   powerOrbs.push({
     x, y,
     r: 11,
-    type: Math.random() > 0.5 ? 'multiball' : 'multiplier',
-    life: 420
+    type,
+    life: 480
   });
-  createParticles(x, y, 7, '#a5f3fc', 'star');
+  createParticles(x, y, 9, '#a5f3fc', 'star');
 }
 
 function activatePower(type) {
@@ -476,14 +548,35 @@ function activatePower(type) {
     addFloatingText(300, 210, 'MULTI-BALL!', '#67e8f9');
     powerUps.push({ type, expires: now + 9200 });
   } else if (type === 'multiplier') {
-    multiplier = Math.min(4.5, multiplier + 1.4);
+    multiplier = Math.min(5.5, multiplier + 1.5);
     playPowerSFX('multiplier');
     addFloatingText(300, 190, 'x' + multiplier.toFixed(1) + ' COURAGE!', '#fde047');
-    powerUps.push({ type, expires: now + 12500 });
+    powerUps.push({ type, expires: now + 13500 });
     setTimeout(() => {
-      if (multiplier > 1) multiplier = Math.max(1, multiplier - 1.3);
+      if (multiplier > 1) multiplier = Math.max(1, multiplier - 1.4);
       updateHUD();
-    }, 12400);
+    }, 13400);
+  } else if (type === 'extraball') {
+    remainingBalls = Math.min(5, remainingBalls + 1);
+    playPowerSFX('multiball');
+    addFloatingText(300, 220, '★ EXTRA BALL! ★', '#4ade80');
+    createParticles(300, 200, 18, '#4ade80', 'star');
+    powerUps.push({ type, expires: now + 6500 });
+  } else if (type === 'capeboost') {
+    // Joshway cape boost: temp high speed + score
+    activeBalls.forEach(b => { b.vx *= 1.6; b.vy *= 1.3 - 0.8; });
+    multiplier = Math.min(6, multiplier + 0.8);
+    playPowerSFX('multiplier');
+    addFloatingText(300, 175, 'CAPE BOOST! JOSHWAY POWER!', '#f97316');
+    powerUps.push({ type, expires: now + 8200 });
+    setTimeout(() => {
+      if (multiplier > 1) multiplier = Math.max(1, multiplier - 0.9);
+      updateHUD();
+    }, 8000);
+  } else if (type === 'shield') {
+    powerUps.push({ type, expires: now + 15500 });
+    addFloatingText(300, 195, 'SHIELD ACTIVE! NO DRAIN!', '#a5b4fc');
+    playSFX(880, 0.4, 'sine', 0.4);
   }
   updateHUD();
 }
@@ -519,6 +612,26 @@ function launchNewBall(forcePower = 0) {
 function drainBall(idx) {
   const b = activeBalls[idx];
   if (!b) return;
+
+  // Shield powerup saves a drain once (Joshway hero protection)
+  const shieldIdx = powerUps.findIndex(p => p.type === 'shield');
+  if (shieldIdx !== -1) {
+    activeBalls.splice(idx, 1);
+    createParticles(b.x, b.y, 22, '#a5b4fc', 'star');
+    playSFX(620, 0.25, 'sine', 0.45);
+    addFloatingText(b.x, b.y - 25, 'SHIELD SAVED!', '#a5b4fc');
+    powerUps.splice(shieldIdx, 1);
+    if (activeBalls.length === 0 && remainingBalls > 0) {
+      setTimeout(() => {
+        if (gameState === 'playing' && activeBalls.length === 0 && remainingBalls > 0) {
+          launchNewBall(1.2);
+        }
+      }, 550);
+    }
+    updateHUD();
+    return;
+  }
+
   activeBalls.splice(idx, 1);
   createParticles(b.x, b.y, 14, '#f87171');
   playBounce('drain');
@@ -1067,7 +1180,7 @@ function resetToLevelSelect() {
 }
 
 function saveHighScore(level, finalScore) {
-  let hs = JSON.parse(localStorage.getItem('joshwayHighScores') || '[[],[],[]]');
+  let hs = JSON.parse(localStorage.getItem('joshwayHighScores') || '[[],[],[],[]]');
   if (!hs[level]) hs[level] = [];
   hs[level].push(finalScore);
   hs[level].sort((a, b) => b - a);
@@ -1076,7 +1189,7 @@ function saveHighScore(level, finalScore) {
 }
 
 function displayHighScoresForLevel(level, targetEl) {
-  const hs = JSON.parse(localStorage.getItem('joshwayHighScores') || '[[],[],[]]');
+  const hs = JSON.parse(localStorage.getItem('joshwayHighScores') || '[[],[],[],[]]');
   const list = (hs[level] || []);
   targetEl.innerHTML = '';
   if (list.length === 0) {
