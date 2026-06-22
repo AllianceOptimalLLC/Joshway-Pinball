@@ -745,6 +745,12 @@ function updatePhysics() {
   const t = currentTable;
   const now = Date.now();
 
+  // Hero challenge mode: auto expire + extra score flair
+  if (heroMode && now > heroModeEnd) {
+    heroMode = false;
+    addFloatingText(300, 120, 'HERO TIME OVER', '#9ca3af');
+  }
+
   activeBalls.forEach((b, idx) => {
     // Gravity + slight air drag, level difficulty scales
     b.vy += 0.235 + (t.difficulty - 1) * 0.035;
@@ -831,7 +837,12 @@ function updatePhysics() {
         const push = 13.5 + t.difficulty * 0.7;
         b.vx = nx * push;
         b.vy = ny * push - 1.4;
-        addScore(bmp.pts, bmp.x, bmp.y);
+        let pts = bmp.pts;
+        if (heroMode) {
+          pts = Math.floor(pts * 1.9);
+          createParticles(bmp.x, bmp.y, 4, '#fde047', 'star');
+        }
+        addScore(pts, bmp.x, bmp.y);
         playBounce('bumper');
         createParticles(bmp.x, bmp.y, 9, '#fde047', 'star');
 
@@ -848,7 +859,9 @@ function updatePhysics() {
       if (b.x > s.x - 4 && b.x < s.x + s.w + 4 && b.y > s.y - 14 && b.y < s.y + s.h + 11) {
         b.vy = -14.5;
         b.vx = (b.x < s.x + s.w / 2) ? -5.5 : 5.5;
-        addScore(115, b.x, b.y);
+        let slingPts = 115;
+        if (heroMode) slingPts = 195;
+        addScore(slingPts, b.x, b.y);
         playBounce('sling');
         createParticles(b.x, b.y - 4, 6, '#f97316');
       }
@@ -890,6 +903,18 @@ function updatePhysics() {
             const bonus = Math.floor(score * 0.12) + 4200;
             addScore(bonus, 300, 130);
             addFloatingText(300, 145, '★ ALL RINGS! HERO BONUS!', '#facc15');
+            // Activate BOSS-LIKE HERO CHALLENGE mode
+            heroMode = true;
+            heroModeEnd = Date.now() + 14500;
+            multiplier = Math.min(7, multiplier + 1.2);
+            addFloatingText(300, 175, 'HERO TIME! MAX POINTS!', '#facc15');
+            playHeroChime();
+            // spawn bonus powerups
+            for (let k = 0; k < 2; k++) {
+              setTimeout(() => {
+                if (gameState === 'playing') spawnPowerOrb(140 + k * 220, 320 - k * 40);
+              }, 300 + k * 280);
+            }
           }
         }
       }
@@ -1146,6 +1171,16 @@ function draw() {
     ctx.fillText('PAUSED', 210, 345);
     ctx.font = '13px monospace';
     ctx.fillText('PRESS P TO RESUME', 175, 390);
+  }
+
+  // HERO CHALLENGE MODE banner
+  if (heroMode && gameState === 'playing') {
+    const pulse = Math.sin(Date.now() / 90) * 0.2 + 1;
+    ctx.fillStyle = `rgba(250, 204, 21, ${0.75 * pulse})`;
+    ctx.font = 'bold 11px monospace';
+    ctx.fillText('★ HERO CHALLENGE MODE ★', 165, 68);
+    ctx.fillStyle = '#f97316';
+    ctx.fillText('MAX SCORE + POWER', 210, 82);
   }
 }
 
