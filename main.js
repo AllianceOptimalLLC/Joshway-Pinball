@@ -62,6 +62,7 @@ const bgImages = {};
 const ballImg = new Image();
 const powerImg = new Image();
 const titleImg = new Image();
+const joshwayImg = new Image();
 
 function loadAssets() {
   bgImages[0] = new Image(); bgImages[0].src = '/assets/level1-bg.jpg';
@@ -70,6 +71,7 @@ function loadAssets() {
   ballImg.src = '/assets/ball-sprite.png';
   powerImg.src = '/assets/powerups.png';
   titleImg.src = '/assets/title-banner.png';
+  joshwayImg.src = '/assets/joshway-sprite.png';
 }
 loadAssets();
 
@@ -692,6 +694,9 @@ function launchNewBall(forcePower = 0) {
     remainingBalls--;
   }
   playSFX(920, 0.18, 'sine', 0.38);
+  // Launch animation flair
+  createParticles(t.launchX || 540, (t.launchY || 635) - 20, 12, '#60a5fa');
+  createParticles(t.launchX || 540, (t.launchY || 635) - 5, 6, '#fde047', 'star');
   updateHUD();
   return true;
 }
@@ -998,6 +1003,15 @@ function draw() {
   ctx.lineWidth = 2.5;
   ctx.strokeRect(26, 43, 548, 732);
 
+  // Level name banner polish
+  ctx.fillStyle = 'rgba(15,23,42,0.75)';
+  ctx.fillRect(140, 42, 320, 18);
+  ctx.fillStyle = '#facc15';
+  ctx.font = 'bold 9px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText(currentTable.name, 300, 54);
+  ctx.textAlign = 'left';
+
   // Plunger lane highlight
   ctx.fillStyle = 'rgba(249,115,22,0.25)';
   ctx.fillRect(505, 590, 68, 195);
@@ -1161,6 +1175,44 @@ function draw() {
   ctx.font = '9px monospace';
   ctx.fillText('J', 8, 68);
   ctx.fillText('★', 8, 760);
+  if (joshwayImg.complete && joshwayImg.width > 10) {
+    ctx.globalAlpha = 0.85;
+    ctx.drawImage(joshwayImg, 4, 710, 22, 22);
+    ctx.globalAlpha = 1;
+  }
+
+  // Mute indicator polish
+  if (isMuted) {
+    ctx.fillStyle = '#f87171';
+    ctx.font = '9px monospace';
+    ctx.fillText('MUTED', 555, 54);
+  }
+
+  // Retro CRT scanlines + vignette polish
+  ctx.strokeStyle = 'rgba(0,0,0,0.18)';
+  ctx.lineWidth = 1;
+  for (let y = 42; y < 780; y += 3) {
+    ctx.beginPath();
+    ctx.moveTo(24, y);
+    ctx.lineTo(572, y);
+    ctx.stroke();
+  }
+  // subtle vignette
+  const grad = ctx.createRadialGradient(300, 410, 260, 300, 410, 410);
+  grad.addColorStop(0, 'rgba(0,0,0,0)');
+  grad.addColorStop(1, 'rgba(0,0,0,0.35)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(20, 38, 560, 740);
+
+  // Table specific Joshway hero flair
+  if (currentLevel === 3) {
+    ctx.fillStyle = 'rgba(163, 163, 172, 0.25)';
+    ctx.fillRect(130, 155, 65, 25); // sofa hint
+    ctx.fillRect(385, 145, 85, 22);
+  } else if (currentLevel === 2) {
+    ctx.fillStyle = 'rgba(103, 232, 249, 0.12)';
+    ctx.fillRect(270, 70, 60, 30); // star fortress
+  }
 
   // If paused overlay
   if (gameState === 'paused') {
@@ -1355,10 +1407,14 @@ function setupInput() {
     keys[e.code] = true;
     if (['Space', 'KeyP', 'KeyR', 'KeyM'].includes(e.code)) e.preventDefault();
 
-    if (gameState === 'playing') {
-      if (e.code === 'KeyP') {
-        gameState = (gameState === 'playing') ? 'paused' : 'playing';
+    if (e.code === 'KeyP') {
+      if (gameState === 'playing') {
+        gameState = 'paused';
+      } else if (gameState === 'paused') {
+        gameState = 'playing';
       }
+    }
+    if (gameState === 'playing') {
       if (e.code === 'KeyR' && remainingBalls < 1) {
         initLevel(currentLevel); // quick retry
       }
@@ -1366,8 +1422,6 @@ function setupInput() {
         isMuted = !isMuted;
         if (isMuted) stopMusic(); else startPinballMusic(currentLevel);
       }
-    } else if (gameState === 'paused' && e.code === 'KeyP') {
-      gameState = 'playing';
     }
   });
 

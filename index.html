@@ -26,11 +26,25 @@
       padding: 12px;
       margin: 12px auto;
     }
+    .arcade-frame::after {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: repeating-linear-gradient(
+        transparent,
+        transparent 3px,
+        rgba(250,204,21,0.035) 3px,
+        rgba(250,204,21,0.035) 4px
+      );
+      pointer-events: none;
+      border-radius: 12px;
+    }
     canvas {
       border: 6px solid #3b82f6;
       image-rendering: pixelated;
       background: #000;
       display: block;
+      box-shadow: inset 0 0 60px rgba(0,0,0,0.6), 0 0 20px rgba(59,130,246,0.5);
     }
     .title { 
       font-size: 42px; 
@@ -138,6 +152,21 @@
     #game-container { position: relative; }
     .hidden { display: none !important; }
     .status { font-size: 11px; color: #facc15; margin-top: 4px; }
+
+    /* Responsive polish for mobile / smaller displays */
+    @media (max-width: 680px) {
+      .arcade-frame {
+        transform: scale(0.82);
+        transform-origin: top center;
+        margin: 4px auto;
+      }
+      canvas { border-width: 4px; }
+      .hud { width: 500px; font-size: 12px; transform: scale(0.95); }
+      .controls { font-size: 9px; max-width: 490px; }
+    }
+    @media (max-width: 520px) {
+      .arcade-frame { transform: scale(0.68); }
+    }
   </style>
 </head>
 <body>
@@ -156,7 +185,7 @@
       SPACE : PLUNGER / LAUNCH &nbsp;&nbsp; P : PAUSE &nbsp;&nbsp; R : RESTART<br>
       COLLECT STAR RINGS • ACTIVATE POWER-UPS • BE A HERO!
     </div>
-    <div class="status">PRODUCTION ARCADE EDITION • MULTI-LEVEL • JOSHWAY THEME</div>
+    <div class="status">PRODUCTION ARCADE EDITION • 4 HERO TABLES • RETRO SONIC PINBALL</div>
   </div>
 
   <!-- LEVEL SELECT -->
@@ -255,9 +284,9 @@
       <li>Flippers launch the ball with power</li>
       <li>Hit ★ STAR RINGS for BIG points</li>
       <li>Bumpers &amp; slings give combo points</li>
-      <li>Collect POWER-UPS for MULTI-BALL and x2 MULTIPLIERS</li>
-      <li>Watch OUTLANES — they drain balls fast!</li>
-      <li>Clear all rings on a level for BONUS!</li>
+      <li>Collect POWER-UPS: MULTI-BALL ⚡, MULTIPLIER ✨, EXTRA BALL 🟢, CAPE BOOST 🦸, SHIELD 🛡️</li>
+      <li>Watch OUTLANES — they drain balls fast! (Shield protects)</li>
+      <li>Clear all rings on a level for HERO CHALLENGE MODE + BONUS!</li>
     </ul>
     <p>3 balls per run. High scores saved locally. Play like a true hero!</p>
     <button id="close-instructions" class="btn">GOT IT, LET'S GO!</button>
