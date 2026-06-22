@@ -106,6 +106,9 @@ const TABLES = [
       { x1: 110, y1: 520, x2: 195, y2: 290, boost: 1.15 }, // left ramp
       { x1: 410, y1: 510, x2: 505, y2: 285, boost: 1.1 }, // right
     ],
+    arcs: [
+      { cx: 295, cy: 205, radius: 38, startAng: -2.9, endAng: -0.2 },
+    ],
     rings: [
       { x: 185, y: 265, collected: false },
       { x: 355, y: 210, collected: false },
@@ -157,6 +160,9 @@ const TABLES = [
       { x1: 95, y1: 505, x2: 175, y2: 255, boost: 1.22 },
       { x1: 405, y1: 500, x2: 502, y2: 260, boost: 1.18 },
       { x1: 235, y1: 580, x2: 360, y2: 170, boost: 0.95 }, // middle
+    ],
+    arcs: [
+      { cx: 270, cy: 155, radius: 58, startAng: -2.8, endAng: 0.3 }, // top loop arc
     ],
     rings: [
       { x: 170, y: 245, collected: false },
@@ -211,6 +217,9 @@ const TABLES = [
       { x1: 78, y1: 498, x2: 145, y2: 215, boost: 1.35 },
       { x1: 425, y1: 490, x2: 498, y2: 215, boost: 1.32 },
       { x1: 205, y1: 560, x2: 395, y2: 135, boost: 1.1 },
+    ],
+    arcs: [
+      { cx: 305, cy: 108, radius: 44, startAng: -2.6, endAng: -0.4 },
     ],
     rings: [
       { x: 155, y: 225, collected: false },
@@ -269,6 +278,9 @@ const TABLES = [
       { x1: 85, y1: 505, x2: 155, y2: 205, boost: 1.38 }, // left bookshelf ramp
       { x1: 420, y1: 500, x2: 495, y2: 195, boost: 1.32 },
       { x1: 220, y1: 555, x2: 375, y2: 145, boost: 1.15 }, // living room loop ramp
+    ],
+    arcs: [
+      { cx: 295, cy: 138, radius: 51, startAng: -3.0, endAng: 0.15 }, // hideout grand loop
     ],
     rings: [
       { x: 145, y: 240, collected: false },
@@ -390,18 +402,49 @@ function circleLineCollision(b, x1, y1, x2, y2, restitution = 0.83) {
   const distx = b.x - cx;
   const disty = b.y - cy;
   const dist = Math.sqrt(distx * distx + disty * disty);
-  if (dist < b.r + 1.5 && dist > 0.1) {
+  if (dist < b.r + 1.8 && dist > 0.05) {
     const nx = distx / dist;
     const ny = disty / dist;
     // reflect
     const dot = b.vx * nx + b.vy * ny;
-    b.vx = (b.vx - 2 * dot * nx) * restitution;
-    b.vy = (b.vy - 2 * dot * ny) * restitution;
+    const rest = Math.min(0.96, restitution + 0.03); // slight polish
+    b.vx = (b.vx - 2 * dot * nx) * rest;
+    b.vy = (b.vy - 2 * dot * ny) * rest;
     // push out
-    const overlap = b.r - dist + 1.2;
+    const overlap = b.r - dist + 1.5;
     b.x += nx * overlap;
     b.y += ny * overlap;
     return { nx, ny, hit: true };
+  }
+  return false;
+}
+
+function circleArcCollision(b, cx, cy, radius, startAng, endAng, restitution = 0.86) {
+  // Approximate arc collision for loops / curves in Joshway tables
+  const dx = b.x - cx;
+  const dy = b.y - cy;
+  const dist = Math.hypot(dx, dy);
+  const ang = Math.atan2(dy, dx);
+  const normAng = (ang + Math.PI * 2) % (Math.PI * 2);
+  const sA = (startAng + Math.PI * 2) % (Math.PI * 2);
+  const eA = (endAng + Math.PI * 2) % (Math.PI * 2);
+  let inArc = false;
+  if (sA < eA) inArc = normAng >= sA && normAng <= eA;
+  else inArc = normAng >= sA || normAng <= eA;
+  const targetDist = radius - b.r;
+  if (dist < radius + b.r + 2 && dist > 4 && inArc) {
+    const nx = dx / dist;
+    const ny = dy / dist;
+    const dot = b.vx * nx + b.vy * ny;
+    b.vx = (b.vx - 2 * dot * nx) * restitution;
+    b.vy = (b.vy - 2 * dot * ny) * restitution;
+    // push to surface
+    const overlap = (radius - dist) + b.r * 0.8;
+    b.x += nx * overlap;
+    b.y += ny * overlap;
+    // arc boost feel
+    if (Math.abs(b.vy) > 4) b.vy *= 0.98;
+    return true;
   }
   return false;
 }
@@ -694,6 +737,16 @@ function updatePhysics() {
         addScore(65, b.x, b.y - 10);
       }
     });
+
+    // === ARCS (loop physics for hero tables) ===
+    if (t.arcs) {
+      t.arcs.forEach(a => {
+        if (circleArcCollision(b, a.cx, a.cy, a.radius, a.startAng, a.endAng, 0.87)) {
+          addScore(45, b.x, b.y);
+          if (Math.random() < 0.4) createParticles(b.x, b.y, 4, '#fde047');
+        }
+      });
+    }
 
     // === OUTLANES (instant drain) ===
     let drained = false;
