@@ -54,6 +54,8 @@ let plunging = false;
 const keys = {};
 let musicTimer = null;
 let lastPowerSpawn = 0;
+let heroMode = false;
+let heroModeEnd = 0;
 
 // Images (preloaded)
 const bgImages = {};
@@ -366,7 +368,8 @@ function playThump(vol = 0.3) {
 
 function playHeroChime() {
   if (!audioCtx || isMuted) return;
-  [880, 1175, 1568].forEach((f, i) => setTimeout(() => playSFX(f, 0.13, 'sine', 0.45), i * 65));
+  [880, 1175, 1568, 1976].forEach((f, i) => setTimeout(() => playSFX(f, 0.11 + i*0.01, 'sine', 0.42), i * 58));
+  setTimeout(() => playSFX(660, 0.18, 'triangle', 0.25), 140);
 }
 
 function playPowerSFX(type) {
@@ -1197,6 +1200,8 @@ function initLevel(levelIdx) {
   leftFlipperAngle = 0.26;
   rightFlipperAngle = -0.26;
   lastPowerSpawn = Date.now();
+  heroMode = false;
+  heroModeEnd = 0;
 
   // reset HUD
   updateHUD();
