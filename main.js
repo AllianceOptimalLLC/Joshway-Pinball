@@ -322,15 +322,46 @@ function playSFX(freq, dur, type = 'square', vol = 0.28, ramp = 0.06) {
   osc.type = type;
   osc.frequency.value = freq;
   filter.type = 'lowpass';
-  filter.frequency.value = 2200;
+  filter.frequency.value = 2400;
   gain.gain.value = vol;
   osc.connect(filter);
   filter.connect(gain);
   gain.connect(audioCtx.destination);
   osc.start();
   const t = audioCtx.currentTime;
-  gain.gain.linearRampToValueAtTime(0.0001, t + dur);
-  osc.stop(t + dur + 0.02);
+  gain.gain.linearRampToValueAtTime(0.0001, t + dur + (ramp || 0));
+  osc.stop(t + dur + 0.04);
+}
+
+function playThump(vol = 0.3) {
+  if (!audioCtx || isMuted) return;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  const noise = audioCtx.createBufferSource();
+  const noiseGain = audioCtx.createGain();
+  const filter = audioCtx.createBiquadFilter();
+  osc.type = 'sine';
+  osc.frequency.value = 95;
+  filter.type = 'lowpass';
+  filter.frequency.value = 420;
+  const buffer = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.18, audioCtx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+  noise.buffer = buffer;
+  gain.gain.value = vol * 0.9;
+  noiseGain.gain.value = vol * 0.65;
+  osc.connect(filter);
+  filter.connect(gain);
+  gain.connect(audioCtx.destination);
+  noise.connect(noiseGain);
+  noiseGain.connect(audioCtx.destination);
+  osc.start();
+  noise.start();
+  const t = audioCtx.currentTime;
+  gain.gain.linearRampToValueAtTime(0.0001, t + 0.17);
+  noiseGain.gain.linearRampToValueAtTime(0.0001, t + 0.17);
+  osc.stop(t + 0.2);
+  noise.stop(t + 0.2);
 }
 
 function playHeroChime() {
@@ -350,36 +381,46 @@ function playPowerSFX(type) {
 }
 
 function playBounce(type = 'bumper') {
-  if (type === 'bumper') playSFX(620 + Math.random()*60, 0.07, 'square', 0.32);
+  if (type === 'bumper') {
+    playSFX(620 + Math.random()*60, 0.07, 'square', 0.32);
+    if (Math.random() < 0.3) playThump(0.18);
+  }
   else if (type === 'sling') playSFX(920, 0.1, 'sawtooth', 0.26);
   else if (type === 'flipper') playSFX(480, 0.08, 'triangle', 0.29);
+  else if (type === 'drain') playSFX(140, 0.35, 'sine', 0.22);
   else playSFX(340, 0.12, 'sawtooth', 0.22);
 }
 
 function startPinballMusic(level = 0) {
   if (!audioCtx || isMuted) return;
   if (musicTimer) clearTimeout(musicTimer);
+  // Richer Joshway hero melodies - table specific
   const levelMelodies = [
-    [392, 523, 659, 784, 659, 523, 392],       // L1 adventure
-    [440, 554, 698, 880, 698, 554, 440, 523], // L2 city upbeat
-    [523, 659, 784, 1046, 932, 784, 659, 523] // L3 epic
+    [392, 523, 659, 784, 659, 523, 392, 440],       // L0 Adventure Island - heroic
+    [440, 554, 698, 880, 698, 554, 440, 523, 587], // L1 Courage City upbeat
+    [523, 659, 784, 1046, 932, 784, 659, 523, 622], // L2 Star Fortress epic
+    [330, 415, 523, 622, 523, 415, 330, 392, 494]  // L3 Hideout cozy adventurous
   ];
   const notes = levelMelodies[level] || levelMelodies[0];
-  const tempo = (level === 2) ? 95 : 145;
+  const tempo = (level === 2) ? 88 : (level === 3 ? 125 : 142);
 
   function playLoop() {
     if (gameState !== 'playing') return;
     notes.forEach((f, i) => {
       setTimeout(() => {
         if (gameState === 'playing') {
-          const t = (i % 3 === 0) ? 'sawtooth' : 'square';
-          playSFX(f, 0.17, t, 0.12);
-          // bass undertone
-          if (i % 2 === 0) playSFX(f * 0.5, 0.28, 'sine', 0.07);
+          const t = (i % 4 === 0) ? 'sawtooth' : (i % 2 === 0 ? 'triangle' : 'square');
+          const v = (i % 3 === 0) ? 0.14 : 0.11;
+          playSFX(f, 0.18, t, v);
+          // bass undertone + occasional thump
+          if (i % 2 === 0) playSFX(f * 0.48, 0.32, 'sine', 0.065);
+          if (i % 5 === 1) playThump(0.08);
+          // harmonic sparkle for hero feel
+          if (i % 3 === 2) playSFX(f * 1.5, 0.09, 'sine', 0.06);
         }
       }, i * tempo);
     });
-    musicTimer = setTimeout(playLoop, notes.length * tempo + 180);
+    musicTimer = setTimeout(playLoop, notes.length * tempo + 210);
   }
   playLoop();
 }
