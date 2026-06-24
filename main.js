@@ -1,4 +1,4 @@
-// Joshway Pinball - Full Production Sonic-style Arcade
+// Joshway Pinball - Full Production Retro Arcade Hero Pinball
 // Multiple tables, improved physics, power-ups, high scores, Joshway hero theme
 
 const canvas = document.getElementById('game');
@@ -16,6 +16,7 @@ const scoreEl = document.getElementById('score');
 const ballsEl = document.getElementById('balls');
 const levelEl = document.getElementById('level');
 const multEl = document.getElementById('multiplier');
+const comboEl = document.getElementById('combo');
 const powerupBar = document.getElementById('powerup-bar');
 const finalScoreEl = document.getElementById('final-score');
 const endTitleEl = document.getElementById('end-title');
@@ -57,25 +58,126 @@ let lastPowerSpawn = 0;
 let heroMode = false;
 let heroModeEnd = 0;
 let lastNudge = 0;
+let bumperCombo = 0;
+let lastBumperTime = 0;
+let maxCombo = 0;
+let ringsCollected = 0;
+let powersUsed = 0;
+let heroStartTime = 0; // for duration bonus calc in end screen
+let secretTriggers = 0; // for cosmic realm secret
 
 // Images (preloaded)
 const bgImages = {};
-const ballImg = new Image();
-const powerImg = new Image();
-const titleImg = new Image();
-const joshwayImg = new Image();
 
 function loadAssets() {
-  bgImages[0] = new Image(); bgImages[0].src = '/assets/level1-bg.jpg';
-  bgImages[1] = new Image(); bgImages[1].src = '/assets/level2-bg.jpg';
-  bgImages[2] = new Image(); bgImages[2].src = '/assets/level3-bg.jpg';
+  bgImages[0] = new Image(); bgImages[0].src = import.meta.env.BASE_URL+'assets/level1-bg.jpg';
+  bgImages[1] = new Image(); bgImages[1].src = import.meta.env.BASE_URL+'assets/level2-bg.jpg';
+  bgImages[2] = new Image(); bgImages[2].src = import.meta.env.BASE_URL+'assets/level3-bg.jpg';
   bgImages[3] = bgImages[0]; // hideout reuses adventure cozy variant + special overlay
-  ballImg.src = '/assets/ball-sprite.png';
-  powerImg.src = '/assets/powerups.png';
-  titleImg.src = '/assets/title-banner.png';
-  joshwayImg.src = '/assets/joshway-sprite.png';
+  bgImages[4] = new Image(); bgImages[4].src = import.meta.env.BASE_URL+'assets/level4-bg.jpg'; // Cosmic Realm generated via image_gen saved to public/assets
+  bgImages[5] = bgImages[0]; // Dream reuses for now, floating dreamy overlay in draw
+  // NOTE: the "sprite" PNGs (ball, powerups, title-banner, joshway, comet, cape-star)
+  // are actually opaque JPEGs with no transparency, so they render as ugly placeholder
+  // boxes. We intentionally do NOT load them and instead draw everything procedurally
+  // below. The .jpg table backgrounds are real and are kept. (img.complete stays false.)
+  window.capeStarImg = { complete: false, width: 0 };
 }
 loadAssets();
+
+// === PROCEDURAL SPRITE DRAWING (replaces broken JPEG "sprites") ===
+
+// Metallic pinball: radial gradient (white highlight -> silver -> dark edge) + specular dot
+function drawPinball(ctx, x, y, r) {
+  ctx.save();
+  // subtle ground shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  ctx.beginPath();
+  ctx.ellipse(x, y + r * 0.9, r * 0.9, r * 0.4, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // body gradient, light from top-left
+  const g = ctx.createRadialGradient(
+    x - r * 0.4, y - r * 0.45, r * 0.1,
+    x, y, r * 1.05
+  );
+  g.addColorStop(0, '#ffffff');
+  g.addColorStop(0.22, '#e2e8f0');
+  g.addColorStop(0.55, '#cbd5e1');
+  g.addColorStop(0.82, '#94a3b8');
+  g.addColorStop(1, '#475569');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fill();
+  // dark rim
+  ctx.strokeStyle = 'rgba(30,41,59,0.9)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(x, y, r - 0.4, 0, Math.PI * 2);
+  ctx.stroke();
+  // soft reflected-light arc lower-right
+  ctx.strokeStyle = 'rgba(148,163,184,0.6)';
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.arc(x, y, r * 0.7, Math.PI * 0.15, Math.PI * 0.75);
+  ctx.stroke();
+  // specular highlight dot
+  ctx.fillStyle = 'rgba(255,255,255,0.95)';
+  ctx.beginPath();
+  ctx.arc(x - r * 0.38, y - r * 0.42, r * 0.22, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+// Glowing power-up orb: colored core + symbol + pulsing outline
+const POWERUP_STYLE = {
+  multiball:   { core: '#67e8f9', edge: '#0e7490', sym: '⚡' },
+  multiplier:  { core: '#fde047', edge: '#a16207', sym: '✦' },
+  extraball:   { core: '#4ade80', edge: '#15803d', sym: '+' },
+  capeboost:   { core: '#fb923c', edge: '#9a3412', sym: '▲' },
+  shield:      { core: '#a5b4fc', edge: '#4338ca', sym: '◊' },
+  cosmicboost: { core: '#e879f9', edge: '#86198f', sym: '★' },
+};
+function drawPowerOrb(ctx, x, y, r, type) {
+  const s = POWERUP_STYLE[type] || POWERUP_STYLE.multiplier;
+  const t = Date.now();
+  const pulse = Math.sin(t / 130) * 1.6;
+  const rr = r + pulse;
+  ctx.save();
+  // outer glow
+  const glow = ctx.createRadialGradient(x, y, rr * 0.4, x, y, rr * 2.1);
+  glow.addColorStop(0, s.core + 'cc');
+  glow.addColorStop(1, s.core + '00');
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(x, y, rr * 2.1, 0, Math.PI * 2);
+  ctx.fill();
+  // orb body with highlight
+  const body = ctx.createRadialGradient(x - rr * 0.35, y - rr * 0.4, rr * 0.1, x, y, rr);
+  body.addColorStop(0, '#ffffff');
+  body.addColorStop(0.35, s.core);
+  body.addColorStop(1, s.edge);
+  ctx.fillStyle = body;
+  ctx.beginPath();
+  ctx.arc(x, y, rr, 0, Math.PI * 2);
+  ctx.fill();
+  // pulsing outline ring
+  ctx.strokeStyle = '#ffffff';
+  ctx.globalAlpha = 0.5 + 0.4 * Math.sin(t / 100);
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(x, y, rr + 2.5 + Math.sin(t / 100) * 1.2, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+  // symbol
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold ' + Math.round(rr * 1.15) + 'px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.shadowColor = 'rgba(0,0,0,0.6)';
+  ctx.shadowBlur = 2;
+  ctx.fillText(s.sym, x, y + 0.5);
+  ctx.restore();
+}
 
 // === TABLE DEFINITIONS - 3 LEVELS, INCREASING DIFFICULTY ===
 const TABLES = [
@@ -307,6 +409,127 @@ const TABLES = [
     launchX: 538,
     launchY: 630,
     ringBonusMult: 175,
+  },
+  // LEVEL 5: COSMIC REALM - 5th table, Joshway space/cosmic theme with NEW unique walls/bumpers/ramps/rings/arcs + secrets
+  {
+    id: 4,
+    name: "COSMIC REALM",
+    bg: 4, // generated cosmic bg overlay via image_gen
+    difficulty: 2.9,
+    walls: [
+      { x1: 48, y1: 35, x2: 552, y2: 35 },
+      { x1: 552, y1: 35, x2: 585, y2: 68 },
+      { x1: 585, y1: 68, x2: 585, y2: 755 },
+      { x1: 585, y1: 755, x2: 505, y2: 790 },
+      { x1: 48, y1: 35, x2: 15, y2: 68 },
+      { x1: 15, y1: 68, x2: 15, y2: 755 },
+      { x1: 15, y1: 755, x2: 95, y2: 790 },
+      { x1: 498, y1: 595, x2: 498, y2: 790 },
+      // cosmic asteroid dividers + nebula walls (NEW unique)
+      { x1: 95, y1: 95, x2: 175, y2: 128 },
+      { x1: 410, y1: 88, x2: 510, y2: 115 },
+      { x1: 195, y1: 310, x2: 280, y2: 340 },
+      { x1: 330, y1: 480, x2: 425, y2: 510 },
+      { x1: 80, y1: 540, x2: 160, y2: 575 },
+    ],
+    bumpers: [
+      { x: 110, y: 145, r: 27, pts: 550 }, // planet bumper
+      { x: 280, y: 85, r: 24, pts: 620 }, // pulsar star
+      { x: 475, y: 150, r: 26, pts: 570 },
+      { x: 145, y: 275, r: 20, pts: 310 },
+      { x: 365, y: 290, r: 21, pts: 335 },
+      { x: 260, y: 395, r: 18, pts: 265 },
+      { x: 425, y: 425, r: 19, pts: 295 },
+      { x: 175, y: 520, r: 17, pts: 240 },
+      { x: 355, y: 555, r: 22, pts: 340 }, // asteroid cluster
+    ],
+    slings: [
+      { x: 72, y: 630, w: 100, h: 15 },
+      { x: 428, y: 630, w: 100, h: 15 },
+    ],
+    ramps: [
+      { x1: 70, y1: 495, x2: 130, y2: 175, boost: 1.42 }, // wormhole left
+      { x1: 430, y1: 485, x2: 505, y2: 165, boost: 1.38 },
+      { x1: 185, y1: 570, x2: 395, y2: 105, boost: 1.22 }, // comet trail ramp
+    ],
+    arcs: [
+      { cx: 295, cy: 115, radius: 55, startAng: -2.95, endAng: 0.25 }, // grand cosmic orbit
+      { cx: 295, cy: 410, radius: 32, startAng: -2.1, endAng: 1.1 }, // small black hole arc - SECRET trigger
+    ],
+    rings: [
+      { x: 125, y: 205, collected: false },
+      { x: 300, y: 140, collected: false },
+      { x: 470, y: 195, collected: false },
+      { x: 90, y: 340, collected: false },
+      { x: 275, y: 315, collected: false },
+      { x: 455, y: 355, collected: false },
+      { x: 160, y: 455, collected: false },
+      { x: 375, y: 480, collected: false },
+      { x: 235, y: 590, collected: false },
+    ],
+    outlanes: [
+      { x1: 20, y1: 645, x2: 72, y2: 780 },
+      { x1: 528, y1: 645, x2: 575, y2: 780 },
+      { x1: 498, y1: 550, x2: 498, y2: 595 },
+    ],
+    plungerX: 540,
+    launchX: 540,
+    launchY: 625,
+    ringBonusMult: 190,
+    hasSecret: true, // triggers extra secret power on blackhole full loops
+  },
+  // LEVEL 6: DREAM REALM - bonus mode like table for polish, floating dreamy
+  {
+    id: 5,
+    name: "DREAM REALM",
+    bg: 0, // reuse for simplicity, or add
+    difficulty: 2.5,
+    walls: [
+      { x1: 60, y1: 50, x2: 540, y2: 50 },
+      { x1: 540, y1: 50, x2: 570, y2: 90 },
+      { x1: 570, y1: 90, x2: 570, y2: 760 },
+      { x1: 570, y1: 760, x2: 520, y2: 785 },
+      { x1: 60, y1: 50, x2: 30, y2: 90 },
+      { x1: 30, y1: 90, x2: 30, y2: 760 },
+      { x1: 30, y1: 760, x2: 80, y2: 785 },
+      { x1: 510, y1: 610, x2: 510, y2: 785 },
+    ],
+    bumpers: [
+      { x: 150, y: 200, r: 25, pts: 450 },
+      { x: 300, y: 140, r: 24, pts: 480 },
+      { x: 450, y: 210, r: 25, pts: 460 },
+      { x: 180, y: 350, r: 20, pts: 260 },
+      { x: 380, y: 360, r: 20, pts: 270 },
+      { x: 270, y: 480, r: 18, pts: 210 },
+    ],
+    slings: [
+      { x: 85, y: 650, w: 95, h: 15 },
+      { x: 420, y: 650, w: 95, h: 15 },
+    ],
+    ramps: [
+      { x1: 100, y1: 510, x2: 170, y2: 220, boost: 1.3 },
+      { x1: 400, y1: 500, x2: 490, y2: 210, boost: 1.28 },
+    ],
+    arcs: [
+      { cx: 300, cy: 130, radius: 50, startAng: -3.0, endAng: 0.2 },
+    ],
+    rings: [
+      { x: 140, y: 230, collected: false },
+      { x: 310, y: 170, collected: false },
+      { x: 470, y: 250, collected: false },
+      { x: 120, y: 380, collected: false },
+      { x: 290, y: 370, collected: false },
+      { x: 450, y: 400, collected: false },
+      { x: 200, y: 520, collected: false },
+    ],
+    outlanes: [
+      { x1: 28, y1: 660, x2: 78, y2: 775 },
+      { x1: 522, y1: 660, x2: 572, y2: 775 },
+    ],
+    plungerX: 540,
+    launchX: 540,
+    launchY: 630,
+    ringBonusMult: 180,
   }
 ];
 
@@ -406,10 +629,11 @@ function startPinballMusic(level = 0) {
     [392, 523, 659, 784, 659, 523, 392, 440],       // L0 Adventure Island - heroic
     [440, 554, 698, 880, 698, 554, 440, 523, 587], // L1 Courage City upbeat
     [523, 659, 784, 1046, 932, 784, 659, 523, 622], // L2 Star Fortress epic
-    [330, 415, 523, 622, 523, 415, 330, 392, 494]  // L3 Hideout cozy adventurous
+    [330, 415, 523, 622, 523, 415, 330, 392, 494],  // L3 Hideout cozy adventurous
+    [480, 620, 780, 960, 880, 720, 580, 440, 700, 820] // L4 Cosmic Realm - ethereal spacey
   ];
   const notes = levelMelodies[level] || levelMelodies[0];
-  const tempo = (level === 2) ? 88 : (level === 3 ? 125 : 142);
+  const tempo = (level === 2) ? 88 : (level === 3 ? 125 : (level === 4 ? 105 : 142));
 
   function playLoop() {
     if (gameState !== 'playing') return;
@@ -540,11 +764,32 @@ function addScore(pts, x = 300, y = 120) {
   updateHUD();
 }
 
+function addBumperScore(pts, x, y) {
+  const now = Date.now();
+  if (now - lastBumperTime < 780) {
+    bumperCombo = Math.min(12, bumperCombo + 1);
+  } else {
+    bumperCombo = 1;
+  }
+  lastBumperTime = now;
+  maxCombo = Math.max(maxCombo, bumperCombo);
+  const bonus = Math.floor(pts * (bumperCombo * 0.22 + (heroMode ? 0.4 : 0)));
+  addScore(pts + bonus, x, y);
+  if (bumperCombo > 2) {
+    createParticles(x, y, 4 + Math.floor(bumperCombo/2), '#fde047');
+  }
+  if (bumperCombo >= 6) {
+    addFloatingText(x, y - 18, 'COMBO x' + bumperCombo, '#facc15');
+    if (bumperCombo % 3 === 0) createParticles(x, y, 7, '#f97316', 'star');
+  }
+}
+
 function updateHUD() {
   scoreEl.textContent = String(Math.floor(score)).padStart(6, '0');
   ballsEl.textContent = remainingBalls + (activeBalls.length > 1 ? '+' + (activeBalls.length - 1) : '');
   levelEl.textContent = (currentLevel + 1);
   multEl.textContent = multiplier.toFixed(1);
+  if (comboEl) comboEl.textContent = bumperCombo || 1;
 
   // powerup icons display - use emoji for reliability & Joshway flair
   powerupBar.innerHTML = '';
@@ -563,6 +808,7 @@ function updateHUD() {
     else if (p.type === 'extraball') icon = '🟢';
     else if (p.type === 'capeboost') icon = '🦸';
     else if (p.type === 'shield') icon = '🛡️';
+    else if (p.type === 'cosmicboost') icon = '☄️';
     el.textContent = icon;
     powerupBar.appendChild(el);
   });
@@ -613,11 +859,12 @@ function updateParticles() {
 function spawnPowerOrb(x, y) {
   const rand = Math.random();
   let type = 'multiball';
-  if (rand < 0.35) type = 'multiball';
-  else if (rand < 0.65) type = 'multiplier';
-  else if (rand < 0.82) type = 'extraball';
-  else if (rand < 0.93) type = 'capeboost';
-  else type = 'shield';
+  if (rand < 0.28) type = 'multiball';
+  else if (rand < 0.52) type = 'multiplier';
+  else if (rand < 0.70) type = 'extraball';
+  else if (rand < 0.82) type = 'capeboost';
+  else if (rand < 0.93) type = 'shield';
+  else type = 'cosmicboost'; // NEW powerup variety using generated comet asset
   powerOrbs.push({
     x, y,
     r: 11,
@@ -629,6 +876,7 @@ function spawnPowerOrb(x, y) {
 
 function activatePower(type) {
   const now = Date.now();
+  powersUsed++;
   if (type === 'multiball') {
     // spawn 2 additional balls near center
     for (let i = 0; i < 2; i++) {
@@ -668,6 +916,19 @@ function activatePower(type) {
     powerUps.push({ type, expires: now + 15500 });
     addFloatingText(300, 195, 'SHIELD ACTIVE! NO DRAIN!', '#a5b4fc');
     playSFX(880, 0.4, 'sine', 0.4);
+  } else if (type === 'cosmicboost') {
+    // NEW powerup variety: cosmic nova boost - high mult + speed + particles for cosmic realm
+    activeBalls.forEach(b => { b.vx *= 1.75; b.vy *= 1.55; });
+    multiplier = Math.min(10.5, multiplier + 1.8);
+    playPowerSFX('multiplier');
+    addFloatingText(300, 165, '★ COSMIC BOOST! NOVA x' + multiplier.toFixed(1) + ' ★', '#c026ff');
+    createParticles(300, 180, 22, '#a78bfa', 'star');
+    powerUps.push({ type, expires: now + 10500 });
+    powersUsed++;
+    setTimeout(() => {
+      if (multiplier > 1) multiplier = Math.max(1, multiplier - 1.6);
+      updateHUD();
+    }, 10400);
   }
   updateHUD();
 }
@@ -681,24 +942,29 @@ function createBall(x, y, vx = 0, vy = -7.5) {
   };
 }
 
-function launchNewBall(forcePower = 0) {
-  if (remainingBalls <= 0 && activeBalls.length === 0) return false;
+function launchNewBall(forcePower = 0, consume = true) {
+  if (consume && remainingBalls <= 0 && activeBalls.length === 0) return false;
   const t = currentTable;
+  // Firm, mostly-vertical launch so the ball travels up the lane into play.
+  // Manual plunge uses the charged plunger (0..13.5); auto-serve passes a power level.
+  const pwr = forcePower ? Math.max(8, forcePower) : Math.max(7, Math.min(13.5, plungerPower));
   const newBall = createBall(
     t.launchX || 540,
     t.launchY || 635,
-    - (forcePower || plungerPower * 7.4 + 1.6),
-    - (forcePower || plungerPower * 2.6 + 4)
+    -(1.6 + pwr * 0.14),   // gentle inward drift into the playfield
+    -(9.5 + pwr * 0.9)     // firm upward shot (speed-clamped) up the launch lane
   );
   activeBalls.push(newBall);
   plungerPower = 0;
-  if (forcePower === 0 && remainingBalls > 0) {
+  // Serving a reserve ball consumes one (manual OR auto re-serve), so the game ends after 3 balls.
+  if (consume && remainingBalls > 0) {
     remainingBalls--;
   }
   playSFX(920, 0.18, 'sine', 0.38);
-  // Launch animation flair
-  createParticles(t.launchX || 540, (t.launchY || 635) - 20, 12, '#60a5fa');
-  createParticles(t.launchX || 540, (t.launchY || 635) - 5, 6, '#fde047', 'star');
+  // Launch animation flair + more particles
+  createParticles(t.launchX || 540, (t.launchY || 635) - 20, 14, '#60a5fa');
+  createParticles(t.launchX || 540, (t.launchY || 635) - 5, 8, '#fde047', 'star');
+  createParticles(t.launchX || 540 + 8, (t.launchY || 635) - 12, 5, '#a5b4fc');
   updateHUD();
   return true;
 }
@@ -718,7 +984,7 @@ function drainBall(idx) {
     if (activeBalls.length === 0 && remainingBalls > 0) {
       setTimeout(() => {
         if (gameState === 'playing' && activeBalls.length === 0 && remainingBalls > 0) {
-          launchNewBall(1.2);
+          launchNewBall(1.2, false);
         }
       }, 550);
     }
@@ -728,6 +994,7 @@ function drainBall(idx) {
 
   activeBalls.splice(idx, 1);
   createParticles(b.x, b.y, 14, '#f87171');
+  createParticles(b.x - 6, b.y + 4, 5, '#9ca3af');
   playBounce('drain');
 
   if (activeBalls.length === 0) {
@@ -791,16 +1058,28 @@ function updatePhysics() {
       if (hit && r.boost) {
         b.vx *= r.boost;
         b.vy = Math.min(b.vy * r.boost - 1.4, -6);
-        addScore(65, b.x, b.y - 10);
+        addBumperScore(65, b.x, b.y - 10);
       }
     });
 
     // === ARCS (loop physics for hero tables) ===
     if (t.arcs) {
-      t.arcs.forEach(a => {
+      t.arcs.forEach((a, ai) => {
         if (circleArcCollision(b, a.cx, a.cy, a.radius, a.startAng, a.endAng, 0.87)) {
-          addScore(45, b.x, b.y);
-          if (Math.random() < 0.4) createParticles(b.x, b.y, 4, '#fde047');
+          addBumperScore(55, b.x, b.y);
+          if (Math.random() < 0.5) createParticles(b.x, b.y, 5, '#fde047');
+          // SECRET: cosmic black hole arc (ai=1 on table4) triggers extra power + points
+          if (currentLevel === 4 && t.hasSecret && ai === 1) {
+            secretTriggers++;
+            if (secretTriggers % 2 === 1) {
+              addScore(850, b.x, b.y);
+              addFloatingText(b.x, b.y - 12, 'BLACKHOLE SECRET!', '#c026ff');
+              createParticles(b.x, b.y, 10, '#a78bfa', 'star');
+              if (secretTriggers >= 3 && powerOrbs.length < 2) {
+                spawnPowerOrb(b.x, b.y - 25);
+              }
+            }
+          }
         }
       });
     }
@@ -846,10 +1125,10 @@ function updatePhysics() {
         b.vy = ny * push - 1.4;
         let pts = bmp.pts;
         if (heroMode) {
-          pts = Math.floor(pts * 1.9);
-          createParticles(bmp.x, bmp.y, 4, '#fde047', 'star');
+          pts = Math.floor(pts * 2.4); // enhanced hero multiplier
+          createParticles(bmp.x, bmp.y, 6, '#fde047', 'star');
         }
-        addScore(pts, bmp.x, bmp.y);
+        addBumperScore(pts, bmp.x, bmp.y);
         playBounce('bumper');
         createParticles(bmp.x, bmp.y, 9, '#fde047', 'star');
 
@@ -867,10 +1146,11 @@ function updatePhysics() {
         b.vy = -14.5;
         b.vx = (b.x < s.x + s.w / 2) ? -5.5 : 5.5;
         let slingPts = 115;
-        if (heroMode) slingPts = 195;
-        addScore(slingPts, b.x, b.y);
+        if (heroMode) slingPts = 245; // enhanced
+        addBumperScore(slingPts, b.x, b.y);
         playBounce('sling');
-        createParticles(b.x, b.y - 4, 6, '#f97316');
+        createParticles(b.x, b.y - 4, 8, '#f97316');
+        if (heroMode) createParticles(b.x + 4, b.y, 3, '#fde047', 'star');
       }
     });
 
@@ -883,6 +1163,7 @@ function updatePhysics() {
     if (applyFlipperImpulse(b, lBaseX, lBaseY, lTipX, lTipY, leftFlipperAngle, leftFlipperVel, true)) {
       addScore(38);
       playBounce('flipper');
+      if (Math.random() < 0.6) createParticles(lTipX, lTipY, 3, '#60a5fa');
     }
 
     // Right
@@ -893,6 +1174,7 @@ function updatePhysics() {
     if (applyFlipperImpulse(b, rBaseX, rBaseY, rTipX, rTipY, rightFlipperAngle, rightFlipperVel, false)) {
       addScore(38);
       playBounce('flipper');
+      if (Math.random() < 0.6) createParticles(rTipX, rTipY, 3, '#60a5fa');
     }
 
     // === COLLECT RINGS ===
@@ -901,26 +1183,36 @@ function updatePhysics() {
         const dx = b.x - r.x, dy = b.y - r.y;
         if (Math.hypot(dx, dy) < 17) {
           r.collected = true;
+          ringsCollected++;
           addScore(980, r.x, r.y - 6);
           playHeroChime();
           createParticles(r.x, r.y, 16, '#fde047', 'star');
           // check clear
           if (t.rings.every(rr => rr.collected)) {
             levelCleared = true;
-            const bonus = Math.floor(score * 0.12) + 4200;
+            ringsCollected = t.rings.length;
+            const bonus = Math.floor(score * 0.13) + 4800;
             addScore(bonus, 300, 130);
             addFloatingText(300, 145, '★ ALL RINGS! HERO BONUS!', '#facc15');
-            // Activate BOSS-LIKE HERO CHALLENGE mode
+            // Activate BOSS-LIKE HERO CHALLENGE mode - ENHANCED multipliers
             heroMode = true;
-            heroModeEnd = Date.now() + 14500;
-            multiplier = Math.min(7, multiplier + 1.2);
-            addFloatingText(300, 175, 'HERO TIME! MAX POINTS!', '#facc15');
+            heroModeEnd = Date.now() + 16200;
+            heroStartTime = Date.now();
+            multiplier = Math.min(9.5, multiplier + 2.0); // more multipliers in hero
+            addFloatingText(300, 175, 'HERO TIME! MAX POINTS x' + multiplier.toFixed(1) + '!', '#facc15');
             playHeroChime();
+            createParticles(300, 160, 18, '#fde047', 'star');
             // spawn bonus powerups
             for (let k = 0; k < 2; k++) {
               setTimeout(() => {
-                if (gameState === 'playing') spawnPowerOrb(140 + k * 220, 320 - k * 40);
-              }, 300 + k * 280);
+                if (gameState === 'playing') spawnPowerOrb(130 + k * 240, 310 - k * 35);
+              }, 280 + k * 260);
+            }
+            // secret cosmic trigger bonus if applicable
+            if (t.hasSecret) {
+              setTimeout(() => {
+                if (gameState === 'playing' && currentLevel === 4) spawnPowerOrb(295, 450);
+              }, 820);
             }
           }
         }
@@ -1004,6 +1296,35 @@ function draw() {
     ctx.fillRect(80, 300, 130, 60);
     ctx.fillRect(390, 280, 120, 55);
   }
+  // NEW: Cosmic Realm special nebula/overlay + secret blackhole glow using generated asset if possible
+  if (currentLevel === 4) {
+    ctx.fillStyle = 'rgba(60, 30, 110, 0.15)';
+    ctx.fillRect(40, 60, 520, 100); // nebula top
+    ctx.fillStyle = 'rgba(140, 80, 220, 0.1)';
+    ctx.fillRect(60, 280, 480, 90);
+    // subtle planet accents
+    ctx.fillStyle = 'rgba(30, 180, 220, 0.12)';
+    ctx.beginPath(); ctx.arc(130, 180, 35, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(470, 520, 28, 0, Math.PI*2); ctx.fill();
+    // procedural comet flair (top-right) - glowing core + tail
+    {
+      const cx = 450, cy = 110;
+      const cg = ctx.createRadialGradient(cx, cy, 0, cx, cy, 26);
+      cg.addColorStop(0, 'rgba(255,255,255,0.5)');
+      cg.addColorStop(0.4, 'rgba(103,232,249,0.35)');
+      cg.addColorStop(1, 'rgba(103,232,249,0)');
+      ctx.fillStyle = cg;
+      ctx.beginPath(); ctx.arc(cx, cy, 26, 0, Math.PI*2); ctx.fill();
+      ctx.strokeStyle = 'rgba(186,230,253,0.4)';
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(cx + 8, cy - 8); ctx.lineTo(cx + 55, cy - 38); ctx.stroke();
+    }
+  }
+  if (currentLevel === 5) {
+    // dreamy floating overlay for bonus table
+    ctx.fillStyle = 'rgba(200, 160, 240, 0.08)';
+    ctx.fillRect(60, 80, 480, 600);
+  }
 
   // Table border & frame (heroic)
   ctx.strokeStyle = '#facc15';
@@ -1020,6 +1341,11 @@ function draw() {
   ctx.font = 'bold 9px monospace';
   ctx.textAlign = 'center';
   ctx.fillText(currentTable.name, 300, 54);
+  if (bumperCombo > 2) {
+    ctx.fillStyle = bumperCombo > 6 ? '#f97316' : '#fde047';
+    ctx.font = 'bold 8px monospace';
+    ctx.fillText('COMBO x' + bumperCombo, 300, 66);
+  }
   ctx.textAlign = 'left';
 
   // Plunger lane highlight
@@ -1093,21 +1419,8 @@ function draw() {
     }
   });
 
-  // Power orbs - Joshway themed
-  powerOrbs.forEach(o => {
-    const isSpecial = ['extraball','capeboost','shield'].includes(o.type);
-    ctx.fillStyle = (o.type === 'multiball') ? '#67e8f9' : (o.type === 'shield' ? '#a5b4fc' : (isSpecial ? '#f97316' : '#facc15'));
-    ctx.beginPath();
-    ctx.arc(o.x, o.y, o.r + Math.sin(Date.now()/110)*1.5, 0, Math.PI*2);
-    ctx.fill();
-    ctx.strokeStyle = '#fff';
-    ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.arc(o.x, o.y, o.r + 2 + Math.sin(Date.now()/90), 0, Math.PI*2); ctx.stroke();
-    ctx.fillStyle = '#111';
-    ctx.font = 'bold 9px monospace';
-    const label = (o.type === 'capeboost') ? 'C' : (o.type === 'shield') ? 'S' : (o.type === 'extraball') ? '+' : o.type[0].toUpperCase();
-    ctx.fillText(label, o.x - 3, o.y + 3);
-  });
+  // Power orbs - fully procedural glowing orbs with a symbol + pulsing outline
+  powerOrbs.forEach(o => drawPowerOrb(ctx, o.x, o.y, o.r, o.type));
 
   // Flippers - improved look with hero colors
   ctx.fillStyle = '#1e40af';
@@ -1146,19 +1459,7 @@ function draw() {
     });
     ctx.globalAlpha = 1;
 
-    if (ballImg.complete && ballImg.width > 10) {
-      ctx.drawImage(ballImg, b.x - b.r - 2, b.y - b.r - 2, b.r * 2.1 + 4, b.r * 2.1 + 4);
-    } else {
-      // fallback hero ball
-      ctx.fillStyle = '#3b82f6';
-      ctx.beginPath();
-      ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#f97316';
-      ctx.fillRect(b.x - 5, b.y - 2.5, 10, 5); // cape
-      ctx.fillStyle = '#fde047';
-      ctx.beginPath(); ctx.arc(b.x + 2, b.y - 1, 2.5, 0, Math.PI*2); ctx.fill();
-    }
+    drawPinball(ctx, b.x, b.y, b.r);
   });
 
   // Plunger
@@ -1166,6 +1467,29 @@ function draw() {
   ctx.fillRect(534, plungerY - plungerPower * 1.7, 24, 62);
   ctx.fillStyle = '#facc15';
   ctx.fillRect(537, plungerY + 4 - plungerPower * 1.7, 18, 6);
+
+  // Launch prompt + charge meter when a ball is waiting to be served
+  if (gameState === 'playing' && activeBalls.length === 0 && remainingBalls > 0) {
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(0,0,0,0.62)';
+    ctx.fillRect(300 - 158, 286, 316, 50);
+    ctx.fillStyle = '#facc15';
+    ctx.font = 'bold 19px monospace';
+    ctx.fillText('HOLD  [ SPACE ]  TO LAUNCH', 300, 308);
+    ctx.fillStyle = '#a5b4fc';
+    ctx.font = '11px monospace';
+    ctx.fillText('charge up, then release to fire up the lane', 300, 326);
+    ctx.restore();
+  }
+  // plunger charge meter
+  if (plungerPower > 0.2) {
+    const mh = 90, mx = 516, my = 648;
+    ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(mx, my, 8, mh);
+    const f = Math.min(1, plungerPower / 13.5);
+    ctx.fillStyle = f > 0.8 ? '#ef4444' : (f > 0.5 ? '#fb923c' : '#facc15');
+    ctx.fillRect(mx, my + mh * (1 - f), 8, mh * f);
+  }
 
   // Particles + floating scores (richer)
   particles.forEach(p => {
@@ -1196,11 +1520,6 @@ function draw() {
   ctx.font = '9px monospace';
   ctx.fillText('J', 8, 68);
   ctx.fillText('★', 8, 760);
-  if (joshwayImg.complete && joshwayImg.width > 10) {
-    ctx.globalAlpha = 0.85;
-    ctx.drawImage(joshwayImg, 4, 710, 22, 22);
-    ctx.globalAlpha = 1;
-  }
 
   // Mute indicator polish
   if (isMuted) {
@@ -1310,6 +1629,13 @@ function initLevel(levelIdx) {
   lastPowerSpawn = Date.now();
   heroMode = false;
   heroModeEnd = 0;
+  bumperCombo = 0;
+  lastBumperTime = 0;
+  maxCombo = 0;
+  ringsCollected = 0;
+  powersUsed = 0;
+  heroStartTime = 0;
+  secretTriggers = 0;
 
   // reset HUD
   updateHUD();
@@ -1341,13 +1667,28 @@ function endGame() {
 
   const t = currentTable;
   let bonus = 0;
+  let detailedBonuses = '';
   if (levelCleared) {
-    bonus = Math.floor(score * (t.ringBonusMult / 100)) + 1800;
+    // Detailed bonuses calc for polish
+    const ringBase = Math.floor(score * (t.ringBonusMult / 100)) + 1800;
+    const comboBonus = Math.floor(maxCombo * 420 + (ringsCollected * 185));
+    const heroBonus = heroStartTime > 0 ? Math.floor((Date.now() - heroStartTime) / 120) + 2600 : 0;
+    const powerBonus = Math.floor(powersUsed * 680);
+    const secretBonus = (currentLevel === 4 && secretTriggers > 0) ? Math.floor(secretTriggers * 920) : 0;
+    bonus = ringBase + comboBonus + heroBonus + powerBonus + secretBonus;
     score += bonus;
+
     bonusScoreEl.textContent = String(bonus).padStart(4, '0');
+    detailedBonuses = `RINGS: +${ringBase} | COMBO x${maxCombo}: +${comboBonus} | HERO: +${heroBonus}<br>POWERS: +${powerBonus} | SECRETS: +${secretBonus}`;
+    bonusInfo.innerHTML = `★ LEVEL COMPLETE! RING BONUS: <span id="bonus-score">${String(bonus).padStart(4,'0')}</span> ★<br><small style="font-size:10px;line-height:1.2;color:#c4b5fd;">${detailedBonuses}</small>`;
     bonusInfo.style.display = 'block';
   } else {
     bonusInfo.style.display = 'none';
+    // even on game over show some detail
+    if (maxCombo > 3 || powersUsed > 0) {
+      bonusInfo.innerHTML = `<small>MAX COMBO x${maxCombo} • ${powersUsed} POWERS USED • ${ringsCollected} RINGS</small>`;
+      bonusInfo.style.display = 'block';
+    }
   }
 
   finalScoreEl.textContent = String(Math.floor(score)).padStart(6, '0');
@@ -1388,7 +1729,7 @@ function resetToLevelSelect() {
 }
 
 function saveHighScore(level, finalScore) {
-  let hs = JSON.parse(localStorage.getItem('joshwayHighScores') || '[[],[],[],[]]');
+  let hs = JSON.parse(localStorage.getItem('joshwayHighScores') || '[[],[],[],[],[],[]]');
   if (!hs[level]) hs[level] = [];
   hs[level].push(finalScore);
   hs[level].sort((a, b) => b - a);
@@ -1397,7 +1738,7 @@ function saveHighScore(level, finalScore) {
 }
 
 function displayHighScoresForLevel(level, targetEl) {
-  const hs = JSON.parse(localStorage.getItem('joshwayHighScores') || '[[],[],[],[]]');
+  const hs = JSON.parse(localStorage.getItem('joshwayHighScores') || '[[],[],[],[],[],[]]');
   const list = (hs[level] || []);
   const tableName = (TABLES[level] && TABLES[level].name) ? TABLES[level].name : ('LEVEL ' + (level+1));
   targetEl.innerHTML = '';
@@ -1460,6 +1801,7 @@ function setupInput() {
           b.vx += dir * 3.5 + (Math.random()-0.5);
           if (e.code === 'ArrowUp') b.vy -= 4.2;
         });
+        addScore(12); // tilt scoring polish
         playSFX(280, 0.06, 'sawtooth', 0.18);
         createParticles(300, 720, 8, '#f97316');
       }
