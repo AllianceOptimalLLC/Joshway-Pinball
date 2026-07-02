@@ -1881,6 +1881,65 @@ function setupInput() {
   window.addEventListener('keydown', (e) => {
     if (e.code === 'Space') e.preventDefault();
   }, { passive: false });
+
+  // === TOUCH CONTROLS (mobile) ===
+  // Left half of the canvas presses the left flipper, right half the right flipper.
+  // When no ball is in play, any touch acts as the plunger: hold to charge, release to launch.
+  // Multi-touch supported: each touch identifier maps to one virtual key so both
+  // flippers can be held at once.
+  const touchRoles = new Map(); // touch identifier -> virtual key code
+  const touchHeld = {};         // virtual key code -> count of touches holding it
+
+  function touchPress(code) {
+    touchHeld[code] = (touchHeld[code] || 0) + 1;
+    keys[code] = true;
+  }
+
+  function touchRelease(code) {
+    touchHeld[code] = Math.max(0, (touchHeld[code] || 0) - 1);
+    if (touchHeld[code] === 0) {
+      keys[code] = false; // updatePlunger handles the Space release launch
+    }
+  }
+
+  canvas.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    const rect = canvas.getBoundingClientRect();
+    for (const t of e.changedTouches) {
+      let code;
+      if (gameState === 'playing' && activeBalls.length === 0 && remainingBalls > 0) {
+        code = 'Space'; // ball waiting: touch anywhere charges the plunger
+      } else {
+        code = (t.clientX - rect.left) < rect.width / 2 ? 'KeyZ' : 'Slash';
+      }
+      touchRoles.set(t.identifier, code);
+      touchPress(code);
+    }
+  }, { passive: false });
+
+  const endTouch = (e) => {
+    e.preventDefault();
+    for (const t of e.changedTouches) {
+      const code = touchRoles.get(t.identifier);
+      if (code !== undefined) {
+        touchRoles.delete(t.identifier);
+        touchRelease(code);
+      }
+    }
+  };
+  canvas.addEventListener('touchend', endTouch, { passive: false });
+  canvas.addEventListener('touchcancel', endTouch, { passive: false });
+
+  // Safety net: if the pointer stream dies (OS gesture, tab switch), release everything.
+  canvas.addEventListener('pointercancel', () => {
+    touchRoles.clear();
+    ['KeyZ', 'Slash', 'Space'].forEach((code) => {
+      if (touchHeld[code]) {
+        touchHeld[code] = 0;
+        keys[code] = false;
+      }
+    });
+  });
 }
 
 // === INIT EVERYTHING ===

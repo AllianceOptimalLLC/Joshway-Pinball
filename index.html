@@ -2,8 +2,15 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Joshway · Pinball</title>
+  <meta name="description" content="Joshway Pinball: flip, nudge, and chase the jackpot on a glowing storybook table. Free browser pinball.">
+  <meta property="og:title" content="Joshway · Pinball">
+  <meta property="og:description" content="Joshway Pinball: flip, nudge, and chase the jackpot on a glowing storybook table. Free browser pinball.">
+  <meta property="og:image" content="https://joshway.app/sprites/joshway_hero.png">
+  <meta property="og:url" content="https://joshway.app/pinball/">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <!-- Joshway shell: shared brand chrome + boot splash (served from site root) -->
   <meta name="theme-color" content="#42c6ee">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><circle cx='32' cy='32' r='30' fill='%2342c6ee'/><text x='32' y='43' font-family='Helvetica,Arial,sans-serif' font-weight='800' font-size='30' text-anchor='middle' fill='%23ffffff'>J</text></svg>">
@@ -49,6 +56,7 @@
       background: #000;
       display: block;
       box-shadow: inset 0 0 60px rgba(0,0,0,0.6), 0 0 20px rgba(59,130,246,0.5);
+      touch-action: none;
     }
     .title { 
       font-size: 42px; 
